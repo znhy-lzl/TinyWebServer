@@ -1,5 +1,6 @@
 #ifndef HTTPCONNECTION_H
 #define HTTPCONNECTION_H
+#include <cppconn/connection.h>
 #include <unistd.h>
 #include <signal.h>
 #include <sys/types.h>
@@ -110,7 +111,7 @@ private:
 public:
     static int m_epollfd;
     static int m_user_count;
-    MYSQL *mysql;
+    sql::Connection *mysql;
     int m_state;  //读为0, 写为1
 
 private:

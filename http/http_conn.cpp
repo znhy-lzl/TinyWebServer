@@ -1,6 +1,12 @@
 #include "http_conn.h"
 
-#include <mysql/mysql.h>
+#include <cppconn/connection.h>
+#include <cppconn/driver.h>
+#include <cppconn/exception.h>
+#include <cppconn/resultset.h>
+#include <cppconn/statement.h>
+#include <cppconn/prepared_statement.h>
+#include <cstdlib>
 #include <fstream>
 
 //定义http响应的一些状态信息
@@ -20,30 +26,23 @@ map<string, string> users;
 void http_conn::initmysql_result(connection_pool *connPool)
 {
     //先从连接池中取一个连接
-    MYSQL *mysql = NULL;
+    sql::Connection *mysql = NULL;
     connectionRAII mysqlcon(&mysql, connPool);
 
+    sql::Statement *stmt = mysql->createStatement();
+
     //在user表中检索username，passwd数据，浏览器端输入
-    if (mysql_query(mysql, "SELECT username,passwd FROM user"))
-    {
-        LOG_ERROR("SELECT error:%s\n", mysql_error(mysql));
-    }
+    sql::ResultSet *res = nullptr;
+    try {
+        res = stmt->executeQuery("SELECT username,passwd FROM user");
 
-    //从表中检索完整的结果集
-    MYSQL_RES *result = mysql_store_result(mysql);
-
-    //返回结果集中的列数
-    int num_fields = mysql_num_fields(result);
-
-    //返回所有字段结构的数组
-    MYSQL_FIELD *fields = mysql_fetch_fields(result);
-
-    //从结果集中获取下一行，将对应的用户名和密码，存入map中
-    while (MYSQL_ROW row = mysql_fetch_row(result))
-    {
-        string temp1(row[0]);
-        string temp2(row[1]);
-        users[temp1] = temp2;
+        // 遍历结果集
+        while (res->next()) {
+            users[res->getString(1)] = res->getString(2);
+        }
+    } catch (sql::SQLException &e) {
+        LOG_ERROR("SQLException: %s\n", e.what());
+        exit(1);
     }
 }
 
@@ -422,22 +421,18 @@ http_conn::HTTP_CODE http_conn::do_request()
         {
             //如果是注册，先检测数据库中是否有重名的
             //没有重名的，进行增加数据
-            char *sql_insert = (char *)malloc(sizeof(char) * 200);
-            strcpy(sql_insert, "INSERT INTO user(username, passwd) VALUES(");
-            strcat(sql_insert, "'");
-            strcat(sql_insert, name);
-            strcat(sql_insert, "', '");
-            strcat(sql_insert, password);
-            strcat(sql_insert, "')");
+            sql::PreparedStatement *stmt = mysql->prepareStatement("INSERT INTO user(username, passwd) VALUES(?, ?)");
+            stmt->setString(1, name);
+            stmt->setString(2, password);
 
             if (users.find(name) == users.end())
             {
                 m_lock.lock();
-                int res = mysql_query(mysql, sql_insert);
+                int res = stmt->executeUpdate();
                 users.insert(pair<string, string>(name, password));
                 m_lock.unlock();
 
-                if (!res)
+                if (res)
                     strcpy(m_url, "/log.html");
                 else
                     strcpy(m_url, "/registerError.html");

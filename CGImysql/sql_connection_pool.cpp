@@ -1,4 +1,7 @@
-#include <mysql/mysql.h>
+#include <cppconn/driver.h>
+#include <cppconn/exception.h>
+#include <cppconn/resultset.h>
+#include <cppconn/statement.h>
 #include <stdio.h>
 #include <string>
 #include <string.h>
@@ -31,24 +34,29 @@ void connection_pool::init(string url, string User, string PassWord, string DBNa
 	m_PassWord = PassWord;
 	m_DatabaseName = DBName;
 	m_close_log = close_log;
+	string host = "tcp://" + url + ":" + to_string(Port);
 
 	for (int i = 0; i < MaxConn; i++)
 	{
-		MYSQL *con = NULL;
-		con = mysql_init(con);
+		sql::Driver *driver;
+    	sql::Connection *con;
+    	sql::Statement *stmt;
+    	sql::ResultSet *res;
 
-		if (con == NULL)
-		{
-			LOG_ERROR("MySQL Error");
-			exit(1);
-		}
-		con = mysql_real_connect(con, url.c_str(), User.c_str(), PassWord.c_str(), DBName.c_str(), Port, NULL, 0);
+		try {
+			// 创建驱动对象
+        driver = get_driver_instance();
 
-		if (con == NULL)
-		{
-			LOG_ERROR("MySQL Error");
-			exit(1);
+        // 建立连接
+        con = driver->connect(host, User, PassWord);
+
+        // 选择数据库
+        con->setSchema(DBName);
+		
+		} catch (sql::SQLException &e) {
+			LOG_ERROR("SQLException: %s", e.what());
 		}
+		
 		connList.push_back(con);
 		++m_FreeConn;
 	}
@@ -60,9 +68,9 @@ void connection_pool::init(string url, string User, string PassWord, string DBNa
 
 
 //当有请求时，从数据库连接池中返回一个可用连接，更新使用和空闲连接数
-MYSQL *connection_pool::GetConnection()
+sql::Connection *connection_pool::GetConnection()
 {
-	MYSQL *con = NULL;
+	sql::Connection *con = nullptr;
 
 	if (0 == connList.size())
 		return NULL;
@@ -82,7 +90,7 @@ MYSQL *connection_pool::GetConnection()
 }
 
 //释放当前使用的连接
-bool connection_pool::ReleaseConnection(MYSQL *con)
+bool connection_pool::ReleaseConnection(sql::Connection *con)
 {
 	if (NULL == con)
 		return false;
@@ -106,11 +114,11 @@ void connection_pool::DestroyPool()
 	lock.lock();
 	if (connList.size() > 0)
 	{
-		list<MYSQL *>::iterator it;
+		list<sql::Connection *>::iterator it;
 		for (it = connList.begin(); it != connList.end(); ++it)
 		{
-			MYSQL *con = *it;
-			mysql_close(con);
+			sql::Connection *con = *it;
+			delete con;
 		}
 		m_CurConn = 0;
 		m_FreeConn = 0;
@@ -131,7 +139,7 @@ connection_pool::~connection_pool()
 	DestroyPool();
 }
 
-connectionRAII::connectionRAII(MYSQL **SQL, connection_pool *connPool){
+connectionRAII::connectionRAII(sql::Connection **SQL, connection_pool *connPool){
 	*SQL = connPool->GetConnection();
 	
 	conRAII = *SQL;

@@ -1,9 +1,13 @@
 #ifndef _CONNECTION_POOL_
 #define _CONNECTION_POOL_
 
+#include <cppconn/connection.h>
 #include <stdio.h>
 #include <list>
-#include <mysql/mysql.h>
+#include <cppconn/driver.h>
+#include <cppconn/exception.h>
+#include <cppconn/resultset.h>
+#include <cppconn/statement.h>
 #include <error.h>
 #include <string.h>
 #include <iostream>
@@ -16,8 +20,8 @@ using namespace std;
 class connection_pool
 {
 public:
-	MYSQL *GetConnection();				 //获取数据库连接
-	bool ReleaseConnection(MYSQL *conn); //释放连接
+	sql::Connection *GetConnection();				 //获取数据库连接
+	bool ReleaseConnection(sql::Connection *conn); //释放连接
 	int GetFreeConn();					 //获取连接
 	void DestroyPool();					 //销毁所有连接
 
@@ -34,7 +38,7 @@ private:
 	int m_CurConn;  //当前已使用的连接数
 	int m_FreeConn; //当前空闲的连接数
 	locker lock;
-	list<MYSQL *> connList; //连接池
+	list<sql::Connection *> connList; //连接池
 	sem reserve;
 
 public:
@@ -49,11 +53,11 @@ public:
 class connectionRAII{
 
 public:
-	connectionRAII(MYSQL **con, connection_pool *connPool);
+	connectionRAII(sql::Connection **con, connection_pool *connPool);
 	~connectionRAII();
 	
 private:
-	MYSQL *conRAII;
+	sql::Connection *conRAII;
 	connection_pool *poolRAII;
 };
 
